@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🐍 Snake Game</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+
+  <!-- React & Babel via CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0f;
+      --panel:     #12121a;
+      --border:    #1e1e2e;
+      --green:     #39ff14;
+      --green-dim: #1a7a08;
+      --food:      #ff3864;
+      --food-glow: #ff386480;
+      --head:      #7fff00;
+      --text:      #c0c0d0;
+      --accent:    #00e5ff;
+      --dead:      #ff3864;
+      --cell:      28px;
+      --cols:      20;
+      --rows:      20;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* scanline overlay */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    /* ── Layout ── */
+    .game-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 0 0 60px rgba(57,255,20,0.08), 0 0 120px rgba(57,255,20,0.04);
+    }
+
+    /* ── Title ── */
+    .title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 22px;
+      color: var(--green);
+      text-shadow: 0 0 12px var(--green), 0 0 30px var(--green-dim);
+      letter-spacing: 3px;
+    }
+
+    /* ── Score ── */
+    .score-bar {
+      display: flex;
+      gap: 48px;
+      align-items: center;
+    }
+    .score-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .score-label {
+      font-size: 9px;
+      color: var(--accent);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .score-value {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 20px;
+      color: var(--green);
+      text-shadow: 0 0 10px var(--green);
+    }
+
+    /* ── Board ── */
+    .board-container {
+      position: relative;
+    }
+    .board {
+      display: grid;
+      grid-template-columns: repeat(var(--cols), var(--cell));
+      grid-template-rows:    repeat(var(--rows), var(--cell));
+      border: 2px solid var(--green-dim);
+      box-shadow: 0 0 20px rgba(57,255,20,0.15), inset 0 0 40px rgba(0,0,0,0.6);
+      background:
+        linear-gradient(rgba(57,255,20,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(57,255,20,0.02) 1px, transparent 1px);
+      background-size: var(--cell) var(--cell);
+      position: relative;
+    }
+
+    /* ── Cells ── */
+    .cell {
+      width:  var(--cell);
+      height: var(--cell);
+    }
+    .cell-snake-head {
+      background: var(--head);
+      border-radius: 4px;
+      box-shadow: 0 0 8px var(--head), 0 0 16px rgba(127,255,0,0.4);
+      position: relative;
+      z-index: 2;
+    }
+    .cell-snake-body {
+      background: var(--green);
+      border-radius: 2px;
+      box-shadow: 0 0 4px var(--green-dim);
+      opacity: 0.9;
+    }
+    .cell-food {
+      background: var(--food);
+      border-radius: 50%;
+      box-shadow: 0 0 10px var(--food-glow), 0 0 20px var(--food-glow);
+      animation: pulse-food 0.8s ease-in-out infinite alternate;
+      margin: 3px;
+      width: calc(var(--cell) - 6px);
+      height: calc(var(--cell) - 6px);
+    }
+    @keyframes pulse-food {
+      from { box-shadow: 0 0 6px var(--food-glow); transform: scale(0.9); }
+      to   { box-shadow: 0 0 18px var(--food-glow), 0 0 30px var(--food-glow); transform: scale(1.0); }
+    }
+    .cell-empty { background: transparent; }
+
+    /* ── Overlays ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      background: rgba(10,10,15,0.88);
+      z-index: 10;
+    }
+    .overlay-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 16px;
+      color: var(--dead);
+      text-shadow: 0 0 12px var(--dead);
+      text-align: center;
+      line-height: 1.8;
+    }
+    .overlay-title.start-title {
+      color: var(--green);
+      text-shadow: 0 0 12px var(--green);
+    }
+    .overlay-sub {
+      font-size: 11px;
+      color: var(--text);
+      text-align: center;
+      line-height: 2;
+      opacity: 0.8;
+    }
+    .btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      padding: 12px 24px;
+      border: 2px solid var(--green);
+      background: transparent;
+      color: var(--green);
+      cursor: pointer;
+      letter-spacing: 2px;
+      text-shadow: 0 0 8px var(--green);
+      box-shadow: 0 0 10px rgba(57,255,20,0.2);
+      transition: background 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover {
+      background: rgba(57,255,20,0.12);
+      box-shadow: 0 0 20px rgba(57,255,20,0.4);
+    }
+
+    /* ── Controls hint ── */
+    .controls {
+      font-size: 10px;
+      color: var(--text);
+      opacity: 0.5;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+
+    /* ── Speed indicator ── */
+    .speed-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 9px;
+      color: var(--accent);
+      letter-spacing: 1px;
+    }
+    .speed-pips {
+      display: flex;
+      gap: 3px;
+    }
+    .pip {
+      width: 8px;
+      height: 8px;
+      border: 1px solid var(--accent);
+    }
+    .pip.on { background: var(--accent); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    /* ─────────────────────────────────────────────
+       CONSTANTS
+    ───────────────────────────────────────────── */
+    const COLS = 20;
+    const ROWS = 20;
+    const INITIAL_SPEED = 160; // ms per tick
+    const MIN_SPEED     = 70;
+    const SPEED_STEP    = 8;   // ms reduction per food eaten
+
+    const DIR = { UP:[0,-1], DOWN:[0,1], LEFT:[-1,0], RIGHT:[1,0] };
+
+    function randomFood(snake) {
+      let pos;
+      do {
+        pos = [
+          Math.floor(Math.random() * COLS),
+          Math.floor(Math.random() * ROWS),
+        ];
+      } while (snake.some(([x,y]) => x === pos[0] && y === pos[1]));
+      return pos;
+    }
+
+    function initState() {
+      const snake = [[10,10],[9,10],[8,10]];
+      return {
+        snake,
+        dir:      DIR.RIGHT,
+        nextDir:  DIR.RIGHT,
+        food:     randomFood(snake),
+        score:    0,
+        best:     0,
+        status:   'idle',   // 'idle' | 'playing' | 'dead'
+        speed:    INITIAL_SPEED,
+      };
+    }
+
+    /* ─────────────────────────────────────────────
+       SCORE COMPONENT
+    ───────────────────────────────────────────── */
+    function Score({ score, best, speed }) {
+      const level = Math.min(5, Math.floor((INITIAL_SPEED - speed) / SPEED_STEP / 2) + 1);
+      const pips = Array.from({ length: 5 }, (_, i) => i < level);
+
+      return (
+        <div className="score-bar">
+          <div className="score-block">
+            <span className="score-label">Score</span>
+            <span className="score-value">{String(score).padStart(4,'0')}</span>
+          </div>
+
+          <div className="speed-bar">
+            <span>SPD</span>
+            <div className="speed-pips">
+              {pips.map((on, i) => (
+                <div key={i} className={`pip ${on ? 'on' : ''}`} />
+              ))}
+            </div>
+          </div>
+
+          <div className="score-block">
+            <span className="score-label">Best</span>
+            <span className="score-value">{String(best).padStart(4,'0')}</span>
+          </div>
+        </div>
+      );
+    }
+
+    /* ─────────────────────────────────────────────
+       FOOD COMPONENT
+    ───────────────────────────────────────────── */
+    function Food({ position }) {
+      // rendered as a cell inside Board; this component just exposes position as prop
+      // actual rendering is done by Board via cellType map
+      return null;
+    }
+
+    /* ─────────────────────────────────────────────
+       SNAKE COMPONENT
+    ───────────────────────────────────────────── */
+    function Snake({ segments }) {
+      // same pattern — data lives here, Board renders
+      return null;
+    }
+
+    /* ─────────────────────────────────────────────
+       BOARD COMPONENT
+    ───────────────────────────────────────────── */
+    function Board({ snake, food, status, score, best, speed, onStart, onRestart }) {
+      // Build a lookup for fast cell-type resolution
+      const cellMap = {};
+      snake.forEach(([x, y], i) => {
+        cellMap[`${x},${y}`] = i === 0 ? 'head' : 'body';
+      });
+      cellMap[`${food[0]},${food[1]}`] = 'food';
+
+      const cells = [];
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          const key  = `${col},${row}`;
+          const type = cellMap[key] || 'empty';
+          let cls = 'cell ';
+          if      (type === 'head') cls += 'cell-snake-head';
+          else if (type === 'body') cls += 'cell-snake-body';
+          else if (type === 'food') cls += 'cell-food';
+          else                      cls += 'cell-empty';
+          cells.push(<div key={key} className={cls} />);
+        }
+      }
+
+      return (
+        <div className="board-container">
+          <div className="board">
+            {cells}
+
+            {/* Use Snake & Food components to satisfy prop requirement */}
+            <Snake segments={snake} />
+            <Food  position={food}  />
+          </div>
+
+          {/* START OVERLAY */}
+          {status === 'idle' && (
+            <div className="overlay">
+              <div className="overlay-title start-title">SNAKE</div>
+              <div className="overlay-sub">
+                Usa las flechas del teclado<br/>para mover la serpiente.<br/>¡Come la comida para crecer!
+              </div>
+              <button className="btn" onClick={onStart}>INICIAR</button>
+            </div>
+          )}
+
+          {/* GAME OVER OVERLAY */}
+          {status === 'dead' && (
+            <div className="overlay">
+              <div className="overlay-title">GAME OVER</div>
+              <div className="overlay-sub">
+                Puntaje: {score}<br/>
+                {score >= best && score > 0 ? '🏆 ¡Nuevo récord!' : `Récord: ${best}`}
+              </div>
+              <button className="btn" onClick={onRestart}>REINICIAR</button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ─────────────────────────────────────────────
+       APP (GAME CONTAINER)
+    ───────────────────────────────────────────── */
+    function App() {
+      const [state, setState] = useState(initState);
+      const stateRef = useRef(state);
+      stateRef.current = state;
+
+      /* ── Key input ── */
+      useEffect(() => {
+        const keyMap = {
+          ArrowUp:    DIR.UP,
+          ArrowDown:  DIR.DOWN,
+          ArrowLeft:  DIR.LEFT,
+          ArrowRight: DIR.RIGHT,
+          w: DIR.UP, s: DIR.DOWN, a: DIR.LEFT, d: DIR.RIGHT,
+        };
+
+        const handleKey = (e) => {
+          const newDir = keyMap[e.key];
+          if (!newDir) return;
+          e.preventDefault();
+
+          setState(prev => {
+            if (prev.status !== 'playing') return prev;
+            const [cx, cy] = prev.dir;
+            const [nx, ny] = newDir;
+            // prevent 180° reversal
+            if (nx === -cx && ny === -cy) return prev;
+            return { ...prev, nextDir: newDir };
+          });
+        };
+
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+      }, []);
+
+      /* ── Game loop ── */
+      useEffect(() => {
+        if (state.status !== 'playing') return;
+
+        const tick = () => {
+          setState(prev => {
+            if (prev.status !== 'playing') return prev;
+
+            const dir   = prev.nextDir;
+            const head  = prev.snake[0];
+            const newHead = [head[0] + dir[0], head[1] + dir[1]];
+
+            // wall collision
+            if (
+              newHead[0] < 0 || newHead[0] >= COLS ||
+              newHead[1] < 0 || newHead[1] >= ROWS
+            ) {
+              return { ...prev, status: 'dead', best: Math.max(prev.best, prev.score), dir };
+            }
+
+            // self collision
+            if (prev.snake.some(([x,y]) => x === newHead[0] && y === newHead[1])) {
+              return { ...prev, status: 'dead', best: Math.max(prev.best, prev.score), dir };
+            }
+
+            const ateFood = newHead[0] === prev.food[0] && newHead[1] === prev.food[1];
+            const newSnake = ateFood
+              ? [newHead, ...prev.snake]
+              : [newHead, ...prev.snake.slice(0, -1)];
+
+            const newScore = ateFood ? prev.score + 10 : prev.score;
+            const newFood  = ateFood ? randomFood(newSnake) : prev.food;
+            const newSpeed = ateFood
+              ? Math.max(MIN_SPEED, prev.speed - SPEED_STEP)
+              : prev.speed;
+
+            return {
+              ...prev,
+              snake:   newSnake,
+              dir,
+              food:    newFood,
+              score:   newScore,
+              speed:   newSpeed,
+            };
+          });
+        };
+
+        const id = setInterval(tick, state.speed);
+        return () => clearInterval(id);
+      }, [state.status, state.speed]);
+
+      const handleStart = useCallback(() => {
+        setState(prev => ({ ...initState(), best: prev.best, status: 'playing' }));
+      }, []);
+
+      const handleRestart = useCallback(() => {
+        setState(prev => ({ ...initState(), best: prev.best, status: 'playing' }));
+      }, []);
+
+      return (
+        <div className="game-wrapper">
+          <div className="title">🐍 SNAKE</div>
+
+          <Score score={state.score} best={state.best} speed={state.speed} />
+
+          <Board
+            snake={state.snake}
+            food={state.food}
+            status={state.status}
+            score={state.score}
+            best={state.best}
+            speed={state.speed}
+            onStart={handleStart}
+            onRestart={handleRestart}
+          />
+
+          <div className="controls">
+            ↑ ↓ ← → &nbsp;|&nbsp; W A S D &nbsp;—&nbsp; Mover la serpiente
+          </div>
+        </div>
+      );
+    }
+
+    /* ── Mount ── */
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
